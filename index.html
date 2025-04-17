@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Galactic Miner: Endless Waves</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Press+Start+2P&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="game-container">
+        <!-- Main Menu Screen -->
+        <div id="menu-screen" class="screen visible">
+            <h1>GALACTIC MINER</h1>
+            <h2>Endless Wave Survival</h2>
+            <div class="menu-options">
+                <button id="start-game">Start Game</button>
+                <button id="how-to-play">How to Play</button>
+                <button id="high-scores">Global High Scores</button>
+            </div>
+            <div class="version">v3.0</div>
+            <div class="server-status" id="server-status">Connecting to server...</div>
+        </div>
+
+        <!-- How to Play Screen -->
+        <div id="howto-screen" class="screen">
+            <h1>HOW TO PLAY</h1>
+            <div class="content-box">
+                <h3>Controls</h3>
+                <div class="controls-grid">
+                    <div class="control-item">
+                        <span class="key">W/A/S/D</span>
+                        <span class="desc">Move Spaceship</span>
+                    </div>
+                    <div class="control-item">
+                        <span class="key">MOUSE</span>
+                        <span class="desc">Aim Laser</span>
+                    </div>
+                    <div class="control-item">
+                        <span class="key">LEFT CLICK</span>
+                        <span class="desc">Fire Laser</span>
+                    </div>
+                    <div class="control-item">
+                        <span class="key">SPACE</span>
+                        <span class="desc">Mine Asteroids</span>
+                    </div>
+                    <div class="control-item">
+                        <span class="key">E</span>
+                        <span class="desc">Collect Resources</span>
+                    </div>
+                    <div class="control-item">
+                        <span class="key">TAB</span>
+                        <span class="desc">Upgrade Ship</span>
+                    </div>
+                    <div class="control-item">
+                        <span class="key">ESC</span>
+                        <span class="desc">Pause Game</span>
+                    </div>
+                </div>
+                
+                <h3>Gameplay</h3>
+                <ul class="gameplay-list">
+                    <li>Survive endless waves of enemy ships</li>
+                    <li>Mine asteroids between waves for resources</li>
+                    <li>Use resources to upgrade your ship</li>
+                    <li>Defeat all enemies in a wave to progress</li>
+                    <li>Compete for top scores on the global leaderboard</li>
+                </ul>
+            </div>
+            <button id="back-from-howto" class="back-btn">Back to Menu</button>
+        </div>
+
+        <!-- High Scores Screen -->
+        <div id="scores-screen" class="screen">
+            <h1>GLOBAL HIGH SCORES</h1>
+            <div class="content-box">
+                <div class="score-tabs">
+                    <button class="score-tab active" data-type="global">Global</button>
+                    <button class="score-tab" data-type="local">Local</button>
+                </div>
+                <table id="high-scores-table">
+                    <thead>
+                        <tr>
+                            <th>Rank</th>
+                            <th>Player</th>
+                            <th>Wave</th>
+                            <th>Score</th>
+                            <th>Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Scores will be populated by JavaScript -->
+                    </tbody>
+                </table>
+            </div>
+            <button id="back-from-scores" class="back-btn">Back to Menu</button>
+        </div>
+
+        <!-- Game Screen -->
+        <div id="game-screen" class="screen">
+            <canvas id="game-canvas"></canvas>
+            <div id="hud">
+                <div class="hud-left">
+                    <div class="hud-item">
+                        <span class="hud-label">Wave:</span>
+                        <span id="wave-count" class="hud-value">1</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="hud-label">Health:</span>
+                        <span id="health-count" class="hud-value">100%</span>
+                    </div>
+                </div>
+                <div class="hud-right">
+                    <div class="hud-item">
+                        <span class="hud-label">Resources:</span>
+                        <span id="resource-count" class="hud-value">0</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="hud-label">Laser:</span>
+                        <span id="laser-count" class="hud-value">100%</span>
+                    </div>
+                    <div class="hud-item">
+                        <span class="hud-label">Score:</span>
+                        <span id="score-count" class="hud-value">0</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="wave-complete">
+                <h2>WAVE COMPLETE!</h2>
+                <p>Resources mined: <span id="resources-mined">0</span></p>
+            </div>
+            
+            <div id="game-messages"></div>
+            
+            <div id="pause-menu" class="hidden">
+                <h2>GAME PAUSED</h2>
+                <button id="resume-game">Resume</button>
+                <button id="quit-game">Quit to Menu</button>
+            </div>
+        </div>
+
+        <!-- Upgrade Screen -->
+        <div id="upgrade-screen" class="screen">
+            <h1>SHIP UPGRADES</h1>
+            <div class="upgrade-container">
+                <div class="player-stats">
+                    <h3>YOUR STATS</h3>
+                    <div class="stat-item">
+                        <span class="stat-label">Health:</span>
+                        <span id="stat-health" class="stat-value">100</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Laser Damage:</span>
+                        <span id="stat-damage" class="stat-value">10</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Fire Rate:</span>
+                        <span id="stat-firerate" class="stat-value">0.5s</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Mining Speed:</span>
+                        <span id="stat-mining" class="stat-value">1x</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Resources:</span>
+                        <span id="stat-resources" class="stat-value">0</span>
+                    </div>
+                </div>
+                
+                <div class="upgrade-list">
+                    <h3>AVAILABLE UPGRADES</h3>
+                    <div class="upgrades-grid" id="upgrades-grid">
+                        <!-- Upgrades will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+            <button id="back-from-upgrades" class="back-btn">Back to Game</button>
+        </div>
+
+        <!-- Game Over Screen -->
+        <div id="gameover-screen" class="screen">
+            <h1>GAME OVER</h1>
+            <div class="content-box">
+                <p>You survived until wave <span id="final-wave">1</span></p>
+                <p>Your final score: <span id="final-score">0</span></p>
+                
+                <div class="name-input">
+                    <label for="player-name">Enter your name:</label>
+                    <input type="text" id="player-name" maxlength="20" placeholder="Space Hero">
+                    <button id="submit-score">Submit Score</button>
+                </div>
+                <div id="submit-status"></div>
+            </div>
+            <button id="restart-game" class="back-btn">Play Again</button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
