@@ -18,7 +18,7 @@ const gameState = {
         maxLaserEnergy: 100,
         laserEnergyRegen: 0.5,
         laserDamage: 10,
-        fireRate: 500, // ms between shots
+        fireRate: 500,
         lastShot: 0,
         miningSpeed: 1,
         resources: 0,
@@ -29,7 +29,11 @@ const gameState = {
             damage: 0,
             fireRate: 0,
             mining: 0,
-            energy: 0
+            energy: 0,
+            movement: 0,
+            collection: 0,
+            critChance: 0,
+            multishot: 0
         }
     },
     resources: {
@@ -38,7 +42,9 @@ const gameState = {
         gold: { value: 3, color: '#ffd700', rarity: 0.3 },
         platinum: { value: 4, color: '#e5e4e2', rarity: 0.2 },
         titanium: { value: 3, color: '#878681', rarity: 0.25 },
-        uranium: { value: 5, color: '#7cfc00', rarity: 0.15 }
+        uranium: { value: 5, color: '#7cfc00', rarity: 0.15 },
+        diamond: { value: 8, color: '#b9f2ff', rarity: 0.1 },
+        mythril: { value: 10, color: '#ff00ff', rarity: 0.05 }
     },
     upgrades: [
         {
@@ -80,6 +86,38 @@ const gameState = {
             price: 8,
             effect: { energy: 20 },
             maxLevel: 3
+        },
+        {
+            id: 'movement1',
+            name: 'Thruster Boosters',
+            description: 'Increase movement speed by 10%',
+            price: 4,
+            effect: { movement: 10 },
+            maxLevel: 5
+        },
+        {
+            id: 'collection1',
+            name: 'Magnetic Field',
+            description: 'Increase resource collection range by 20%',
+            price: 6,
+            effect: { collection: 20 },
+            maxLevel: 3
+        },
+        {
+            id: 'crit1',
+            name: 'Precision Optics',
+            description: 'Increase critical hit chance by 5%',
+            price: 10,
+            effect: { critChance: 5 },
+            maxLevel: 4
+        },
+        {
+            id: 'multishot1',
+            name: 'Multi-Laser Array',
+            description: 'Chance to fire additional lasers (10%)',
+            price: 15,
+            effect: { multishot: 10 },
+            maxLevel: 3
         }
     ],
     asteroids: [],
@@ -97,12 +135,13 @@ const gameState = {
         global: [],
         local: []
     },
-    serverConnected: false
+    serverConnected: false,
+    minAsteroids: 15
 };
 
 // Server Configuration
 const serverConfig = {
-    url: "https://your-highscore-server.com/api", // Replace with your actual server URL
+    url: "https://your-highscore-server.com/api",
     endpoints: {
         submitScore: "/scores",
         getScores: "/scores"
@@ -188,14 +227,12 @@ function setupCanvas() {
 
 // Event Listeners
 function setupEventListeners() {
-    // Window events
     window.addEventListener('resize', setupCanvas);
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mousedown', handleMouseDown);
     
-    // Button events
     buttons.startGame.addEventListener('click', startGame);
     buttons.howToPlay.addEventListener('click', () => switchScreen('howto'));
     buttons.highScores.addEventListener('click', () => switchScreen('scores'));
@@ -207,7 +244,6 @@ function setupEventListeners() {
     buttons.restartGame.addEventListener('click', startGame);
     buttons.submitScore.addEventListener('click', submitHighScore);
     
-    // Score tab events
     scoreTabs.forEach(tab => {
         tab.addEventListener('click', () => {
             scoreTabs.forEach(t => t.classList.remove('active'));
@@ -216,7 +252,6 @@ function setupEventListeners() {
         });
     });
     
-    // Disable context menu on canvas
     canvas.addEventListener('contextmenu', e => e.preventDefault());
 }
 
@@ -224,7 +259,6 @@ function setupEventListeners() {
 function handleKeyDown(e) {
     gameState.keys[e.key.toLowerCase()] = true;
     
-    // Global key commands
     switch (e.key) {
         case 'Escape':
             if (gameState.currentScreen === 'game') {
@@ -260,16 +294,13 @@ function handleMouseDown(e) {
 
 // Screen Management
 function switchScreen(screenName) {
-    // Hide all screens
     Object.values(screens).forEach(screen => {
         screen.classList.remove('visible');
     });
     
-    // Show the requested screen
     screens[screenName].classList.add('visible');
     gameState.currentScreen = screenName;
     
-    // Special cases
     if (screenName === 'game') {
         if (!gameState.paused) {
             requestAnimationFrame(gameLoop);
@@ -286,7 +317,7 @@ function switchScreen(screenName) {
 function startGame() {
     resetGameState();
     setupCanvas();
-    generateAsteroids(15);
+    generateAsteroids(gameState.minAsteroids);
     switchScreen('game');
     requestAnimationFrame(gameLoop);
     addMessage('Welcome to Galactic Miner! Defend against endless waves and mine asteroids.', 'info');
@@ -294,7 +325,6 @@ function startGame() {
 }
 
 function resetGameState() {
-    // Reset player state
     gameState.player = {
         ...gameState.player,
         x: canvas.width / 2,
@@ -314,15 +344,17 @@ function resetGameState() {
             damage: 0,
             fireRate: 0,
             mining: 0,
-            energy: 0
+            energy: 0,
+            movement: 0,
+            collection: 0,
+            critChance: 0,
+            multishot: 0
         }
     };
     
-    // Reset wave state
     gameState.wave = 1;
     gameState.waveActive = false;
     
-    // Clear game objects
     gameState.asteroids = [];
     gameState.enemies = [];
     gameState.projectiles = [];
@@ -333,7 +365,6 @@ function resetGameState() {
     gameState.paused = false;
     gameState.gameTime = 0;
     
-    // Clear HUD
     updateHUD();
     gameMessages.innerHTML = '';
     waveComplete.style.display = 'none';
@@ -492,57 +523,39 @@ function saveLocalHighScore(name, wave, score) {
         date: new Date().toISOString().split('T')[0]
     });
     
-    // Sort by wave descending, then by score descending
     gameState.highScores.local.sort((a, b) => {
         if (b.wave !== a.wave) return b.wave - a.wave;
         return b.score - a.score;
     });
     
-    // Keep only top 10
     if (gameState.highScores.local.length > 10) {
         gameState.highScores.local = gameState.highScores.local.slice(0, 10);
     }
     
-    // Save to localStorage
     localStorage.setItem('galacticMinerLocalScores', JSON.stringify(gameState.highScores.local));
 }
 
 async function submitHighScore() {
     const name = gameOverElements.name.value.trim() || 'Anonymous';
-    const wave = gameState.wave - 1; // Subtract 1 because wave increments before game over
+    const wave = gameState.wave - 1;
     const score = gameState.player.score;
     
-    // Disable button to prevent multiple submissions
     buttons.submitScore.disabled = true;
     
-    // Try to submit to global leaderboard
     const globalSuccess = await submitGlobalHighScore(name, wave, score);
-    
-    // Always save locally
     saveLocalHighScore(name, wave, score);
     
-    // Show scores
     switchScreen('scores');
 }
 
 // Wave System
 function startNextWave() {
-    // Hide wave complete screen
     waveComplete.style.display = 'none';
-    
-    // Reset resources mined counter
     gameState.player.resourcesMinedThisBreak = 0;
-    
-    // Start wave
     gameState.waveActive = true;
     gameState.lastEnemySpawnTime = 0;
-    
-    // Update HUD
     hudElements.wave.textContent = gameState.wave;
-    
-    // Spawn initial enemies
     spawnWaveEnemies();
-    
     addMessage(`Wave ${gameState.wave} started! Defeat the enemies.`, 'warning');
 }
 
@@ -563,31 +576,16 @@ function spawnEnemy() {
     const side = Math.floor(Math.random() * 4);
     let x, y;
     
-    // Base enemy stats
     const baseHealth = 50;
     const baseSpeed = 1;
     const baseDamage = 10;
-    
-    // Scale with wave
     const waveScale = 1 + (gameState.wave - 1) * 0.2;
     
     switch (side) {
-        case 0: // top
-            x = Math.random() * canvas.width;
-            y = -50;
-            break;
-        case 1: // right
-            x = canvas.width + 50;
-            y = Math.random() * canvas.height;
-            break;
-        case 2: // bottom
-            x = Math.random() * canvas.width;
-            y = canvas.height + 50;
-            break;
-        case 3: // left
-            x = -50;
-            y = Math.random() * canvas.height;
-            break;
+        case 0: x = Math.random() * canvas.width; y = -50; break;
+        case 1: x = canvas.width + 50; y = Math.random() * canvas.height; break;
+        case 2: x = Math.random() * canvas.width; y = canvas.height + 50; break;
+        case 3: x = -50; y = Math.random() * canvas.height; break;
     }
     
     gameState.enemies.push({
@@ -609,85 +607,106 @@ function spawnEnemy() {
 function endWave() {
     gameState.waveActive = false;
     gameState.wave++;
-    
-    // Show wave complete screen
     waveComplete.style.display = 'block';
     resourcesMined.textContent = gameState.player.resourcesMinedThisBreak;
     
-    // Generate new asteroids (more in later waves)
-    generateAsteroids(5 + Math.floor(gameState.wave / 2));
+    // Maintain minimum asteroids
+    while (gameState.asteroids.length < gameState.minAsteroids) {
+        spawnAsteroid();
+    }
     
     addMessage(`Wave complete! Mined ${gameState.player.resourcesMinedThisBreak} resources.`, 'success');
 }
 
-// Enemy System
-function updateEnemies(deltaTime) {
-    const p = gameState.player;
-    const now = Date.now();
-    
-    // Spawn enemies if wave is active
-    if (gameState.waveActive && 
-        gameState.enemies.length < 3 + Math.floor(gameState.wave / 2) && 
-        now - gameState.lastEnemySpawnTime > gameState.enemySpawnDelay) {
-        spawnWaveEnemies();
+// Mining System
+function generateAsteroids(count) {
+    for (let i = 0; i < count; i++) {
+        spawnAsteroid();
     }
+}
+
+function spawnAsteroid() {
+    const types = Object.keys(gameState.resources);
+    const type = types[Math.floor(Math.random() * types.length)];
+    const rarity = gameState.resources[type].rarity;
     
-    // Update existing enemies
-    gameState.enemies.forEach((enemy, index) => {
-        // Move toward player
-        const dx = p.x - enemy.x;
-        const dy = p.y - enemy.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        
-        enemy.x += (dx / dist) * enemy.speed;
-        enemy.y += (dy / dist) * enemy.speed;
-        
-        // Shoot at player
-        if (now - enemy.lastShot > enemy.shotDelay && dist < 300) {
-            enemy.lastShot = now;
-            
-            gameState.projectiles.push({
-                x: enemy.x,
-                y: enemy.y,
-                width: 10,
-                height: 10,
-                speed: 4,
-                dx: dx / dist,
-                dy: dy / dist,
-                damage: enemy.damage,
-                color: '#f88',
-                isEnemy: true,
-                life: 2000
-            });
-        }
-        
-        // Check collision with player
-        if (checkCollision(enemy, p)) {
-            if (p.health > 0) {
-                p.health -= enemy.damage;
-                
-                // Remove enemy on collision
-                gameState.enemies.splice(index, 1);
-                
-                // Create explosion
-                createExplosion(enemy.x, enemy.y, '#f44');
-                
-                addMessage('Enemy ship collided with you!', 'warning');
-                updateHUD();
-                
-                // Check for player death
-                if (p.health <= 0) {
-                    p.health = 0;
-                    gameOver();
-                }
-            }
-        }
+    if (Math.random() > rarity) return false;
+    
+    const size = 30 + Math.random() * 70;
+    
+    gameState.asteroids.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height,
+        size: size,
+        type: type,
+        resources: Math.floor(size / 10) * (1 + Math.random()),
+        rotation: Math.random() * Math.PI * 2,
+        rotationSpeed: (Math.random() - 0.5) * 0.02,
+        color: gameState.resources[type].color
     });
     
-    // Check if wave is complete (no more enemies)
-    if (gameState.waveActive && gameState.enemies.length === 0) {
-        endWave();
+    return true;
+}
+
+function mineAsteroid(asteroid) {
+    const p = gameState.player;
+    const yieldMultiplier = p.miningSpeed * (1 + p.upgrades.mining * 0.01);
+    
+    let amountMined = Math.floor(asteroid.resources * yieldMultiplier);
+    if (Math.random() < p.upgrades.critChance * 0.01) {
+        amountMined *= 2;
+        addMessage(`CRITICAL HIT! Mined ${amountMined} ${asteroid.type}`, 'success');
     }
+    
+    p.resources += amountMined;
+    p.resourcesMinedThisBreak += amountMined;
+    
+    for (let i = 0; i < amountMined; i++) {
+        gameState.particles.push({
+            x: asteroid.x + (Math.random() - 0.5) * 20,
+            y: asteroid.y + (Math.random() - 0.5) * 20,
+            size: 5 + Math.random() * 5,
+            color: asteroid.color,
+            type: 'resource',
+            resourceType: asteroid.type,
+            life: 10000
+        });
+    }
+    
+    asteroid.resources -= amountMined;
+    asteroid.size *= 0.8;
+    
+    if (asteroid.resources <= 0 || asteroid.size < 10) {
+        const index = gameState.asteroids.indexOf(asteroid);
+        if (index !== -1) {
+            gameState.asteroids.splice(index, 1);
+            createExplosion(asteroid.x, asteroid.y, asteroid.color);
+            
+            // Spawn new asteroid to replace this one
+            let spawned = false;
+            while (!spawned) {
+                spawned = spawnAsteroid();
+            }
+        }
+    }
+    
+    if (!(Math.random() < p.upgrades.critChance * 0.01)) {
+        addMessage(`Mined ${amountMined} units of ${asteroid.type}`);
+    }
+    updateHUD();
+}
+
+function collectResource(particle) {
+    const p = gameState.player;
+    const collectionRange = 30 * (1 + p.upgrades.collection * 0.01);
+    
+    if (distance(p, particle) < collectionRange) {
+        p.resources += 1;
+        p.score += 1;
+        updateHUD();
+        return true;
+    }
+    return false;
 }
 
 // Combat System
@@ -695,25 +714,40 @@ function fireLaser() {
     const p = gameState.player;
     const now = Date.now();
     
-    // Check if can fire
-    if (now - p.lastShot < p.fireRate * (1 - p.upgrades.fireRate * 0.01)) {
-        return;
-    }
-    
+    if (now - p.lastShot < p.fireRate * (1 - p.upgrades.fireRate * 0.01)) return;
     if (p.laserEnergy <= 0) {
         addMessage('Laser energy depleted! Wait for recharge.', 'warning');
         return;
     }
     
-    // Calculate direction to mouse
     const dx = gameState.mouse.x - p.x;
     const dy = gameState.mouse.y - p.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     
-    // Create projectile
+    createProjectile(p.x, p.y, dx, dy, dist);
+    
+    if (Math.random() < p.upgrades.multishot * 0.01) {
+        const angle1 = Math.atan2(dy, dx) + 0.2;
+        const angle2 = Math.atan2(dy, dx) - 0.2;
+        
+        createProjectile(p.x, p.y, Math.cos(angle1), Math.sin(angle1), 1);
+        createProjectile(p.x, p.y, Math.cos(angle2), Math.sin(angle2), 1);
+        
+        addMessage('Multishot activated!', 'info');
+    }
+    
+    p.lastShot = now;
+    p.laserEnergy -= 5;
+    if (p.laserEnergy < 0) p.laserEnergy = 0;
+    
+    createMuzzleFlash(p.x, p.y, dx / dist, dy / dist);
+}
+
+function createProjectile(x, y, dx, dy, dist) {
+    const p = gameState.player;
     gameState.projectiles.push({
-        x: p.x,
-        y: p.y,
+        x: x,
+        y: y,
         width: 5,
         height: 5,
         speed: 10,
@@ -722,20 +756,11 @@ function fireLaser() {
         damage: p.laserDamage * (1 + p.upgrades.damage * 0.01),
         color: '#0ff',
         isEnemy: false,
-        life: 1000 // 1 second lifetime
+        life: 1000
     });
-    
-    // Update player state
-    p.lastShot = now;
-    p.laserEnergy -= 5;
-    if (p.laserEnergy < 0) p.laserEnergy = 0;
-    
-    // Create muzzle flash
-    createMuzzleFlash(p.x, p.y, dx / dist, dy / dist);
 }
 
 function createMuzzleFlash(x, y, dx, dy) {
-    // Offset from player center
     const offsetX = dx * 25;
     const offsetY = dy * 25;
     
@@ -774,95 +799,20 @@ function createExplosion(x, y, color) {
     }
 }
 
-// Mining System
-function generateAsteroids(count) {
-    const types = Object.keys(gameState.resources);
-    
-    for (let i = 0; i < count; i++) {
-        const size = 30 + Math.random() * 70;
-        const type = types[Math.floor(Math.random() * types.length)];
-        const rarity = gameState.resources[type].rarity;
-        
-        // Adjust probability based on rarity
-        if (Math.random() > rarity) continue;
-        
-        gameState.asteroids.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            size: size,
-            type: type,
-            resources: Math.floor(size / 10) * (1 + Math.random()),
-            rotation: Math.random() * Math.PI * 2,
-            rotationSpeed: (Math.random() - 0.5) * 0.02,
-            color: gameState.resources[type].color
-        });
-    }
-}
-
-function mineAsteroid(asteroid) {
-    const p = gameState.player;
-    const yieldMultiplier = p.miningSpeed * (1 + p.upgrades.mining * 0.01);
-    
-    // Calculate amount mined
-    const amountMined = Math.floor(asteroid.resources * yieldMultiplier);
-    
-    // Add to resources
-    p.resources += amountMined;
-    p.resourcesMinedThisBreak += amountMined;
-    
-    // Create resource particles
-    for (let i = 0; i < amountMined; i++) {
-        gameState.particles.push({
-            x: asteroid.x + (Math.random() - 0.5) * 20,
-            y: asteroid.y + (Math.random() - 0.5) * 20,
-            size: 5 + Math.random() * 5,
-            color: asteroid.color,
-            type: 'resource',
-            resourceType: asteroid.type,
-            life: 10000 // 10 seconds
-        });
-    }
-    
-    // Update asteroid
-    asteroid.resources -= amountMined;
-    asteroid.size *= 0.8;
-    
-    if (asteroid.resources <= 0 || asteroid.size < 10) {
-        // Asteroid depleted - remove it
-        const index = gameState.asteroids.indexOf(asteroid);
-        if (index !== -1) {
-            gameState.asteroids.splice(index, 1);
-            createExplosion(asteroid.x, asteroid.y, asteroid.color);
-        }
-    }
-    
-    addMessage(`Mined ${amountMined} units of ${asteroid.type}`);
-    updateHUD();
-}
-
-function collectResource(particle) {
-    const p = gameState.player;
-    p.resources += 1;
-    p.score += 1;
-    
-    updateHUD();
-}
-
 // Upgrade System
 function renderUpgradeScreen() {
     const p = gameState.player;
     
-    // Update player stats
     playerStats.health.textContent = `${p.maxHealth} (+${p.upgrades.health}%)`;
     playerStats.damage.textContent = `${p.laserDamage * (1 + p.upgrades.damage * 0.01).toFixed(1)} (+${p.upgrades.damage}%)`;
     playerStats.firerate.textContent = `${(p.fireRate * (1 - p.upgrades.fireRate * 0.01) / 1000).toFixed(2)}s (+${p.upgrades.fireRate}%)`;
     playerStats.mining.textContent = `${(p.miningSpeed * (1 + p.upgrades.mining * 0.01)).toFixed(1)}x (+${p.upgrades.mining}%)`;
     playerStats.resources.textContent = p.resources;
     
-    // Render upgrades
     upgradesGrid.innerHTML = '';
     gameState.upgrades.forEach(upgrade => {
-        const currentLevel = p.upgrades[Object.keys(upgrade.effect)[0]];
+        const stat = Object.keys(upgrade.effect)[0];
+        const currentLevel = p.upgrades[stat] || 0;
         const maxLevel = upgrade.maxLevel || 5;
         const canUpgrade = currentLevel < maxLevel && p.resources >= upgrade.price * (currentLevel + 1);
         
@@ -889,7 +839,7 @@ function renderUpgradeScreen() {
 function purchaseUpgrade(upgrade) {
     const p = gameState.player;
     const stat = Object.keys(upgrade.effect)[0];
-    const currentLevel = p.upgrades[stat];
+    const currentLevel = p.upgrades[stat] || 0;
     const maxLevel = upgrade.maxLevel || 5;
     const cost = upgrade.price * (currentLevel + 1);
     
@@ -900,26 +850,31 @@ function purchaseUpgrade(upgrade) {
     
     if (p.resources >= cost) {
         p.resources -= cost;
-        p.upgrades[stat] += 1;
+        p.upgrades[stat] = currentLevel + 1;
         
-        // Apply upgrade effects
         switch (stat) {
             case 'health':
                 p.maxHealth = 100 * (1 + p.upgrades.health * 0.01);
                 p.health = p.maxHealth;
                 break;
             case 'damage':
-                // Damage is calculated when shooting
                 break;
             case 'fireRate':
-                // Fire rate is calculated when shooting
                 break;
             case 'mining':
-                // Mining speed is calculated when mining
                 break;
             case 'energy':
                 p.maxLaserEnergy = 100 * (1 + p.upgrades.energy * 0.2);
                 p.laserEnergyRegen = 0.5 * (1 + p.upgrades.energy * 0.2);
+                break;
+            case 'movement':
+                p.speed = 5 * (1 + p.upgrades.movement * 0.01);
+                break;
+            case 'collection':
+                break;
+            case 'critChance':
+                break;
+            case 'multishot':
                 break;
         }
         
@@ -934,7 +889,7 @@ function purchaseUpgrade(upgrade) {
 // Game Over
 function gameOver() {
     gameState.paused = true;
-    gameOverElements.wave.textContent = gameState.wave - 1; // Subtract 1 because wave increments before game over
+    gameOverElements.wave.textContent = gameState.wave - 1;
     gameOverElements.score.textContent = gameState.player.score;
     gameOverElements.name.value = '';
     submitStatus.textContent = '';
@@ -957,7 +912,6 @@ function addMessage(text, type = 'info') {
     message.textContent = text;
     gameMessages.appendChild(message);
     
-    // Remove after animation
     setTimeout(() => {
         message.remove();
     }, 5000);
@@ -967,30 +921,23 @@ function addMessage(text, type = 'info') {
 function gameLoop(timestamp) {
     if (gameState.paused || gameState.currentScreen !== 'game') return;
     
-    // Calculate delta time
     const deltaTime = timestamp - gameState.lastTime;
     gameState.lastTime = timestamp;
     gameState.gameTime += deltaTime;
     
-    // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw background
     drawBackground();
     
-    // Update game state
     updatePlayer(deltaTime);
     updateEnemies(deltaTime);
     updateProjectiles(deltaTime);
     updateParticles(deltaTime);
     updateMining(deltaTime);
     
-    // Rotate asteroids
     gameState.asteroids.forEach(asteroid => {
         asteroid.rotation += asteroid.rotationSpeed * deltaTime / 16;
     });
     
-    // Draw game objects
     drawAsteroids();
     drawEnemies();
     drawProjectiles();
@@ -999,14 +946,12 @@ function gameLoop(timestamp) {
     drawPlayer();
     drawLaserAim();
     
-    // Continue loop
     requestAnimationFrame(gameLoop);
 }
 
 function updatePlayer(deltaTime) {
     const p = gameState.player;
     
-    // Movement
     let moveX = 0;
     let moveY = 0;
     
@@ -1015,35 +960,88 @@ function updatePlayer(deltaTime) {
     if (gameState.keys['a'] || gameState.keys['arrowleft']) moveX -= 1;
     if (gameState.keys['d'] || gameState.keys['arrowright']) moveX += 1;
     
-    // Normalize diagonal movement
     if (moveX !== 0 && moveY !== 0) {
         moveX *= 0.7071;
         moveY *= 0.7071;
     }
     
-    // Apply movement
     p.x += moveX * p.speed;
     p.y += moveY * p.speed;
     
-    // Boundary check
     p.x = Math.max(p.width / 2, Math.min(canvas.width - p.width / 2, p.x));
     p.y = Math.max(p.height / 2, Math.min(canvas.height - p.height / 2, p.y));
     
-    // Laser energy regen
     if (p.laserEnergy < p.maxLaserEnergy) {
         p.laserEnergy += p.laserEnergyRegen * deltaTime / 16;
         if (p.laserEnergy > p.maxLaserEnergy) p.laserEnergy = p.maxLaserEnergy;
         updateHUD();
     }
     
-    // Collect resources
     if (gameState.keys['e']) {
         gameState.particles.forEach((particle, index) => {
-            if (particle.type === 'resource' && distance(p, particle) < 30) {
-                collectResource(particle);
-                gameState.particles.splice(index, 1);
+            if (particle.type === 'resource') {
+                if (collectResource(particle)) {
+                    gameState.particles.splice(index, 1);
+                }
             }
         });
+    }
+}
+
+function updateEnemies(deltaTime) {
+    const p = gameState.player;
+    const now = Date.now();
+    
+    if (gameState.waveActive && 
+        gameState.enemies.length < 3 + Math.floor(gameState.wave / 2) && 
+        now - gameState.lastEnemySpawnTime > gameState.enemySpawnDelay) {
+        spawnWaveEnemies();
+    }
+    
+    gameState.enemies.forEach((enemy, index) => {
+        const dx = p.x - enemy.x;
+        const dy = p.y - enemy.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        enemy.x += (dx / dist) * enemy.speed;
+        enemy.y += (dy / dist) * enemy.speed;
+        
+        if (now - enemy.lastShot > enemy.shotDelay && dist < 300) {
+            enemy.lastShot = now;
+            
+            gameState.projectiles.push({
+                x: enemy.x,
+                y: enemy.y,
+                width: 10,
+                height: 10,
+                speed: 4,
+                dx: dx / dist,
+                dy: dy / dist,
+                damage: enemy.damage,
+                color: '#f88',
+                isEnemy: true,
+                life: 2000
+            });
+        }
+        
+        if (checkCollision(enemy, p)) {
+            if (p.health > 0) {
+                p.health -= enemy.damage;
+                gameState.enemies.splice(index, 1);
+                createExplosion(enemy.x, enemy.y, '#f44');
+                addMessage('Enemy ship collided with you!', 'warning');
+                updateHUD();
+                
+                if (p.health <= 0) {
+                    p.health = 0;
+                    gameOver();
+                }
+            }
+        }
+    });
+    
+    if (gameState.waveActive && gameState.enemies.length === 0) {
+        endWave();
     }
 }
 
@@ -1052,7 +1050,6 @@ function updateProjectiles(deltaTime) {
         proj.x += proj.dx * proj.speed;
         proj.y += proj.dy * proj.speed;
         
-        // Check lifetime
         if (proj.life) {
             proj.life -= deltaTime;
             if (proj.life <= 0) {
@@ -1061,24 +1058,19 @@ function updateProjectiles(deltaTime) {
             }
         }
         
-        // Remove if out of bounds
         if (proj.x < 0 || proj.x > canvas.width || proj.y < 0 || proj.y > canvas.height) {
             gameState.projectiles.splice(index, 1);
             return;
         }
         
-        // Check for hits
         if (proj.isEnemy) {
-            // Player hit
             if (checkCollision(proj, gameState.player)) {
                 if (gameState.player.health > 0) {
                     gameState.player.health -= proj.damage;
-                    
                     gameState.projectiles.splice(index, 1);
                     createExplosion(proj.x, proj.y, '#f44');
                     updateHUD();
                     
-                    // Check for player death
                     if (gameState.player.health <= 0) {
                         gameState.player.health = 0;
                         gameOver();
@@ -1086,16 +1078,13 @@ function updateProjectiles(deltaTime) {
                 }
             }
         } else {
-            // Enemy hit
             gameState.enemies.forEach((enemy, enemyIndex) => {
                 if (checkCollision(proj, enemy)) {
                     enemy.health -= proj.damage;
                     
                     if (enemy.health <= 0) {
-                        // Enemy destroyed
                         gameState.enemies.splice(enemyIndex, 1);
                         gameState.player.score += enemy.value;
-                        
                         addMessage(`Enemy destroyed! +${enemy.value} score`, 'success');
                     }
                     
@@ -1123,10 +1112,8 @@ function updateParticles(deltaTime) {
 function updateMining(deltaTime) {
     const p = gameState.player;
     
-    // Check if mining key is pressed
     if (gameState.keys[' '] && !gameState.paused) {
         if (!gameState.miningTarget) {
-            // Find closest asteroid in front of player
             let closestDist = Infinity;
             let closestAsteroid = null;
             
@@ -1147,7 +1134,6 @@ function updateMining(deltaTime) {
             gameState.miningProgress += 0.5 * p.miningSpeed * (1 + p.upgrades.mining * 0.01) * deltaTime / 16;
             
             if (gameState.miningProgress >= 100) {
-                // Asteroid mined
                 mineAsteroid(gameState.miningTarget);
                 gameState.miningTarget = null;
                 gameState.miningProgress = 0;
@@ -1182,7 +1168,6 @@ function distance(obj1, obj2) {
 
 // Rendering
 function drawBackground() {
-    // Draw starfield
     ctx.fillStyle = '#fff';
     for (let i = 0; i < 200; i++) {
         const x = (i * canvas.width / 200 + gameState.gameTime * 0.05) % canvas.width;
@@ -1193,7 +1178,6 @@ function drawBackground() {
     }
     ctx.globalAlpha = 1;
     
-    // Draw nebula effects
     const gradient1 = ctx.createRadialGradient(
         canvas.width / 3, canvas.height / 3, 0,
         canvas.width / 3, canvas.height / 3, 300
@@ -1216,15 +1200,11 @@ function drawBackground() {
 function drawPlayer() {
     const p = gameState.player;
     
-    // Save context
     ctx.save();
     ctx.translate(p.x, p.y);
-    
-    // Rotate toward mouse
     const angle = Math.atan2(gameState.mouse.y - p.y, gameState.mouse.x - p.x);
     ctx.rotate(angle + Math.PI / 2);
     
-    // Draw ship body
     ctx.fillStyle = '#4af';
     ctx.beginPath();
     ctx.moveTo(0, -p.height / 2);
@@ -1233,7 +1213,6 @@ function drawPlayer() {
     ctx.closePath();
     ctx.fill();
     
-    // Draw ship details
     ctx.fillStyle = '#8cf';
     ctx.beginPath();
     ctx.moveTo(0, -p.height / 4);
@@ -1242,7 +1221,6 @@ function drawPlayer() {
     ctx.closePath();
     ctx.fill();
     
-    // Draw engine glow when moving
     if (gameState.keys['w'] || gameState.keys['a'] || gameState.keys['s'] || gameState.keys['d'] || 
         gameState.keys['arrowup'] || gameState.keys['arrowdown'] || gameState.keys['arrowleft'] || gameState.keys['arrowright']) {
         ctx.fillStyle = '#ff0';
@@ -1254,19 +1232,15 @@ function drawPlayer() {
         ctx.fill();
     }
     
-    // Restore context
     ctx.restore();
 }
 
 function drawLaserAim() {
     const p = gameState.player;
-    
-    // Calculate direction to mouse
     const dx = gameState.mouse.x - p.x;
     const dy = gameState.mouse.y - p.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
     
-    // Draw aim line
     ctx.strokeStyle = 'rgba(0, 255, 255, 0.3)';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -1274,7 +1248,6 @@ function drawLaserAim() {
     ctx.lineTo(p.x + dx * 1000 / dist, p.y + dy * 1000 / dist);
     ctx.stroke();
     
-    // Draw aim circle at mouse
     ctx.strokeStyle = '#0ff';
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -1288,11 +1261,9 @@ function drawAsteroids() {
         ctx.translate(asteroid.x, asteroid.y);
         ctx.rotate(asteroid.rotation);
         
-        // Draw asteroid
         ctx.fillStyle = asteroid.color;
         ctx.beginPath();
         
-        // Create rocky shape
         const points = 8 + Math.floor(Math.random() * 5);
         for (let i = 0; i < points; i++) {
             const angle = (i / points) * Math.PI * 2;
@@ -1310,13 +1281,12 @@ function drawAsteroids() {
         ctx.closePath();
         ctx.fill();
         
-        // Draw cracks/details
         ctx.strokeStyle = '#000';
         ctx.lineWidth = 1;
         for (let i = 0; i < 3; i++) {
             ctx.beginPath();
             const startAngle = Math.random() * Math.PI * 2;
-            const endAngle = startAngle + (Math.random() * 0.5 - 0.25) * Math.PI;
+            const endAngle = startAngle + (Math.random() - 0.5) * Math.PI;
             const radius = asteroid.size / 2 * (0.3 + Math.random() * 0.5);
             ctx.arc(0, 0, radius, startAngle, endAngle);
             ctx.stroke();
@@ -1324,7 +1294,6 @@ function drawAsteroids() {
         
         ctx.restore();
         
-        // Draw resource count
         if (asteroid.resources > 0) {
             ctx.fillStyle = '#fff';
             ctx.font = '10px Arial';
@@ -1338,13 +1307,10 @@ function drawEnemies() {
     gameState.enemies.forEach(enemy => {
         ctx.save();
         ctx.translate(enemy.x, enemy.y);
-        
-        // Calculate angle toward player
         const p = gameState.player;
         const angle = Math.atan2(p.y - enemy.y, p.x - enemy.x);
         ctx.rotate(angle + Math.PI / 2);
         
-        // Draw enemy ship
         ctx.fillStyle = enemy.color;
         ctx.beginPath();
         ctx.moveTo(0, -enemy.height / 2);
@@ -1356,7 +1322,6 @@ function drawEnemies() {
         
         ctx.restore();
         
-        // Draw health bar
         const healthPercent = enemy.health / enemy.maxHealth;
         ctx.fillStyle = '#f00';
         ctx.fillRect(
@@ -1391,7 +1356,6 @@ function drawMiningLaser() {
         const p = gameState.player;
         const asteroid = gameState.miningTarget;
         
-        // Draw mining laser
         ctx.strokeStyle = '#0f0';
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -1399,7 +1363,6 @@ function drawMiningLaser() {
         ctx.lineTo(asteroid.x, asteroid.y);
         ctx.stroke();
         
-        // Add glow
         ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
         ctx.lineWidth = 10;
         ctx.beginPath();
@@ -1407,14 +1370,13 @@ function drawMiningLaser() {
         ctx.lineTo(asteroid.x, asteroid.y);
         ctx.stroke();
         
-        // Draw progress circle around asteroid
         ctx.strokeStyle = '#0f0';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(
             asteroid.x, 
             asteroid.y, 
-            asteroid.size / 2 + 10, 
+            asteroid.size / a + 10, 
             0, 
             Math.PI * 2 * (gameState.miningProgress / 100)
         );
